@@ -1,191 +1,210 @@
-require('dotenv').config()
-const express = require('express')
-const cors = require('cors')
-const cookieParser = require('cookie-parser')
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
-const jwt = require('jsonwebtoken')
-const morgan = require('morgan')
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const morgan = require('morgan');
+const http = require('http');
+const { Server } = require('socket.io');
 
-const port = process.env.PORT || 5000
-const app = express()
-// middleware
-const corsOptions = {
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
-  credentials: true,
-  optionSuccessStatus: 200,
-}
-app.use(cors(corsOptions))
+const port = process.env.PORT || 5000;
+const app = express();
+const server = http.createServer(app); // HTTP server for WebSockets
 
-app.use(express.json())
-app.use(cookieParser())
-app.use(morgan('dev'))
+// WebSocket Server Configuration
+const io = new Server(server, {
+  cors: {
+    origin: ['http://localhost:5173', 'http://localhost:5174'],
+    credentials: true,
+  },
+});
 
-const verifyToken = async (req, res, next) => {
-  const token = req.cookies?.token
+// Middleware
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'], credentials: true }));
+app.use(express.json());
+app.use(morgan('dev'));
 
-  if (!token) {
-    return res.status(401).send({ message: 'unauthorized access' })
-  }
-  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-    if (err) {
-      console.log(err)
-      return res.status(401).send({ message: 'unauthorized access' })
-    }
-    req.user = decoded
-    next()
-  })
-}
-
+// **MongoDB Connection**
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.csovo.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
   },
-})
-async function run() {
+});
+
+async function connectDB() {
   try {
-    const db = client.db('TaskManDB')
-    const usersCollection = db.collection('users')
-    const tasksCollection = db.collection('tasks')
-    // Generate jwt token
-    app.post('/jwt', async (req, res) => {
-      const email = req.body.email
-      const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '365d' });
+    await client.connect();
+    console.log('✅ Connected to MongoDB');
 
-      res
-        .cookie('token', token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-        })
-        .send({ success: true })
-    })
+    const db = client.db('TaskManDB');
+    const usersCollection = db.collection('users');
+    const tasksCollection = db.collection('tasks');
 
-    // save or update a user in db
+    // Create Indexes for Optimized Queries
+    await tasksCollection.createIndex({ email: 1 });
+    await usersCollection.createIndex({ email: 1 }, { unique: true });
+
+    // **Generate JWT Token - Removed since we don't use JWT**
+    // Removed routes like '/jwt' and cookie handling
+
     app.post('/users/:email', async (req, res) => {
-      const email = req.params.email
-      const query = { email }
-      const user = req.body
-      // check if user exists in db
-      const isExist = await usersCollection.findOne(query)
-      if (isExist) {
-        return res.send(isExist)
-      }
-      const result = await usersCollection.insertOne({
-        ...user,
-        role: 'customer',
-        timestamp: Date.now(),
-      })
-      res.send(result)
-    })
+      const email = req.params.email;
+      const user = req.body;
 
-    // **Get All Users (Optional)**
-    app.get('/users', async (req, res) => {
       try {
-        const users = await usersCollection.find().toArray();
-        res.send(users);
+        let existingUser = await usersCollection.findOne({ email });
+
+        if (!existingUser) {
+          const newUser = { 
+            ...user, 
+            role: 'customer', 
+            timestamp: new Date().toISOString() 
+          };
+          await usersCollection.insertOne(newUser);
+          existingUser = newUser; // Assign the newly created user
+        }
+
+        res.json(existingUser);
       } catch (error) {
-        res.status(500).send({ message: 'Failed to fetch users', error });
+        res.status(500).json({ message: 'Failed to save user', error });
       }
     });
 
-    // add task
+    // **Get All Users**
+    app.get('/users', async (req, res) => {
+      try {
+        const users = await usersCollection.find().toArray();
+        res.json(users);
+      } catch (error) {
+        res.status(500).json({ message: 'Failed to fetch users', error });
+      }
+    });
+
+    // **Get All Tasks**
+    app.get('/tasks', async (req, res) => {
+      try {
+        const tasks = await tasksCollection.find().toArray();
+        res.json(tasks);
+      } catch (error) {
+        res.status(500).json({ message: 'Failed to fetch tasks', error });
+      }
+    });
+
+    // **Add Task**
     app.post('/tasks', async (req, res) => {
       try {
         const { title, description, category, email, displayName } = req.body;
         if (!title || !category) {
           return res.status(400).json({ message: 'Title and category are required' });
         }
+
         const newTask = {
           title,
           description: description || '',
           category,
           email,
           displayName,
-          timestamp: new Date()
+          timestamp: new Date(),
         };
+
         const result = await tasksCollection.insertOne(newTask);
-        res.status(201).json(result);
+
+        if (result.acknowledged) {
+          newTask._id = result.insertedId; // Add MongoDB's generated ID to the newTask object
+
+          // Fetch updated tasks list
+          const updatedTasks = await tasksCollection.find().toArray();
+
+          // Emit real-time update with new tasks
+          io.emit('tasks:update', updatedTasks);
+
+          res.status(201).json(newTask);
+        } else {
+          res.status(500).json({ message: 'Failed to add task' });
+        }
       } catch (error) {
         res.status(500).json({ message: 'Server error', error });
       }
     });
 
-    // 🔹 **Get All Tasks**
+    // **Logout - No token to clear now, so this can be removed**
+    // app.get('/logout', (req, res) => {
+    //   res
+    //     .clearCookie('token', {
+    //       maxAge: 0,
+    //       secure: process.env.NODE_ENV === 'production',
+    //       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+    //     })
+    //     .json({ success: true });
+    // });
 
-    app.get('/tasks', async (req, res) => {
-      const result = await tasksCollection.find().toArray()
-      res.send(result)
-    })
+    // **WebSocket Connection**
+    io.on('connection', (socket) => {
+      console.log('🔗 User connected:', socket.id);
+    
+      const sendTasks = async () => {
+        const tasks = await tasksCollection.find().toArray();
+        io.emit('tasks:update', tasks);  // Emit the tasks to all connected clients
+      };
+    
+      // Send Initial Tasks when a user connects
+      sendTasks();
+    
+      // Handle fetching tasks when requested by client
+      socket.on("getTasks", async () => {
+        const tasks = await tasksCollection.find().toArray();
+        socket.emit("tasks:update", tasks);  // Send the tasks back to the client
+      });
+    
+      // Handle task update
+      socket.on('task:update', async (updatedTask, callback) => {
+        try {
+          const { _id, ...updateData } = updatedTask;
+          await tasksCollection.updateOne({ _id: new ObjectId(_id) }, { $set: updateData });
+    
+          // Emit updated tasks list after update
+          sendTasks();
+    
+          callback && callback({ success: true });
+        } catch (error) {
+          console.error('Error updating task:', error);
+          callback && callback({ success: false, error: 'Failed to update task' });
+        }
+      });
+    
+      // Handle task delete
+      socket.on('task:delete', async (taskId, callback) => {
+        try {
+          await tasksCollection.deleteOne({ _id: new ObjectId(taskId) });
+          sendTasks();  // Emit updated task list after deletion
+          callback && callback({ success: true });
+        } catch (error) {
+          callback && callback({ success: false, error: 'Failed to delete task' });
+        }
+      });
+    
+      socket.on('disconnect', () => {
+        console.log('🔗 User disconnected:', socket.id);
+      });
+    });
+    
 
-    // 🔹 **Get Only "To-Do" Tasks**
-    app.get('/tasks/todo', async (req, res) => {
-      try {
-        const result = await tasksCollection.find({ category: 'To-Do' }).toArray();
-        res.send(result);
-      } catch (error) {
-        console.error('Error fetching To-Do tasks:', error);
-        res.status(500).send({ message: 'Server error' });
-      }
+    // Start the Server with WebSockets
+    server.listen(port, () => {
+      console.log(` Server running on port ${port}`);
     });
 
-    // 🔹 **Get Only "In Progress" Tasks**
-    app.get('/tasks/in-progress', async (req, res) => {
-      try {
-        const result = await tasksCollection.find({ category: 'In Progress' }).toArray();
-        res.send(result);
-      } catch (error) {
-        console.error('Error fetching To-Do tasks:', error);
-        res.status(500).send({ message: 'Server error' });
-      }
-    });
-
-    // 🔹 **Get Only "done" Tasks**
-    app.get('/tasks/done', async (req, res) => {
-      try {
-        const result = await tasksCollection.find({ category: 'In Progress' }).toArray();
-        res.send(result);
-      } catch (error) {
-        console.error('Error fetching To-Do tasks:', error);
-        res.status(500).send({ message: 'Server error' });
-      }
-    });
-
-
-    // Logout
-    app.get('/logout', async (req, res) => {
-      try {
-        res
-          .clearCookie('token', {
-            maxAge: 0,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-          })
-          .send({ success: true })
-      } catch (err) {
-        res.status(500).send(err)
-      }
-    })
-
-    // Send a ping to confirm a successful connection
-    await client.db('admin').command({ ping: 1 })
-    console.log(
-      'Pinged your deployment. You successfully connected to MongoDB!'
-    )
-  } finally {
-    // Ensures that the client will close when you finish/error
+  } catch (error) {
+    console.error('Error:', error);
+    process.exit(1); // Exit process if DB connection fails
   }
 }
-run().catch(console.dir)
+
+connectDB();
 
 app.get('/', (req, res) => {
-  res.send('Hello from plantNet Server..')
-})
-
-app.listen(port, () => {
-  console.log(`plantNet is running on port ${port}`)
-})
+  res.send(' Hello from Task Manager Server.');
+});
