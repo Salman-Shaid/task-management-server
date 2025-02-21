@@ -130,16 +130,6 @@ async function connectDB() {
       }
     });
 
-    // **Logout - No token to clear now, so this can be removed**
-    // app.get('/logout', (req, res) => {
-    //   res
-    //     .clearCookie('token', {
-    //       maxAge: 0,
-    //       secure: process.env.NODE_ENV === 'production',
-    //       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-    //     })
-    //     .json({ success: true });
-    // });
 
     // **WebSocket Connection**
     io.on('connection', (socket) => {
