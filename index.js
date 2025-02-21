@@ -13,13 +13,13 @@ const server = http.createServer(app); // HTTP server for WebSockets
 // WebSocket Server Configuration
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:5174'],
+    origin: ['http://localhost:5173', 'http://localhost:5174', 'https://task-management-234b9.web.app', 'https://task-management-234b9.firebaseapp.com'],
     credentials: true,
   },
 });
 
 // Middleware
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'], credentials: true }));
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174','https://task-management-234b9.web.app', 'https://task-management-234b9.firebaseapp.com'], credentials: true }));
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -36,7 +36,7 @@ const client = new MongoClient(uri, {
 
 async function connectDB() {
   try {
-    await client.connect();
+    // await client.connect();
     console.log('✅ Connected to MongoDB');
 
     const db = client.db('TaskManDB');
