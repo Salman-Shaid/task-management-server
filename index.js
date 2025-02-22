@@ -46,9 +46,6 @@ async function connectDB() {
     await tasksCollection.createIndex({ email: 1 });
     await usersCollection.createIndex({ email: 1 }, { unique: true });
 
-    // **Generate JWT Token - Removed since we don't use JWT**
-    // Removed routes like '/jwt' and cookie handling
-
     app.post('/users/:email', async (req, res) => {
       const email = req.params.email;
       const user = req.body;
@@ -63,7 +60,7 @@ async function connectDB() {
             timestamp: new Date().toISOString()
           };
           await usersCollection.insertOne(newUser);
-          existingUser = newUser; // Assign the newly created user
+          existingUser = newUser; 
         }
 
         res.json(existingUser);
@@ -112,9 +109,9 @@ async function connectDB() {
         const result = await tasksCollection.insertOne(newTask);
 
         if (result.acknowledged) {
-          newTask._id = result.insertedId; // Add MongoDB's generated ID to the newTask object
+          newTask._id = result.insertedId; 
 
-          // Fetch updated tasks list
+      
           const updatedTasks = await tasksCollection.find().toArray();
 
           // Emit real-time update with new tasks
