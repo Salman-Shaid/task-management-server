@@ -31,4 +31,4 @@ A **Task Management Application** that allows users to **add, edit, delete, and 
 ## 📦 Dependencies
 ### **Frontend**
 ```bash
-npm install react @hello-pangea/dnd socket.io-client firebase tailwindcss
+npm install react @hello-pangea/dnd socket.io-client firebase tailwindcss 
