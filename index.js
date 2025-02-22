@@ -5,7 +5,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const morgan = require('morgan');
 const http = require('http');
 const { Server } = require('socket.io');
-
+const { ObjectId } = require('mongodb');
 const port = process.env.PORT || 5000;
 const app = express();
 const server = http.createServer(app); // HTTP server for WebSockets
@@ -135,56 +135,58 @@ async function connectDB() {
     io.on('connection', (socket) => {
       console.log('🔗 User connected:', socket.id);
     
+      // Fetch & Send Updated Tasks List
       const sendTasks = async () => {
-        const tasks = await tasksCollection.find().toArray();
-        io.emit('tasks:update', tasks);  // Emit the tasks to all connected clients
+        try {
+          const tasks = await tasksCollection.find().toArray();
+          io.emit('tasks:update', tasks);  // Emit updated tasks list
+        } catch (error) {
+          console.error("❌ Error fetching tasks:", error);
+        }
       };
     
-      // Send Initial Tasks when a user connects
-      sendTasks();
-    
-      // Handle fetching tasks when requested by client
+      // Client Requests Initial Tasks
       socket.on("getTasks", async () => {
-        const tasks = await tasksCollection.find().toArray();
-        socket.emit("tasks:update", tasks);  // Send the tasks back to the client
+        await sendTasks();  // Fetch and send tasks when requested
       });
     
-      // Handle task update
+      // Handle Task Update
       socket.on('task:update', async (updatedTask, callback) => {
         try {
           const { _id, ...updateData } = updatedTask;
           await tasksCollection.updateOne({ _id: new ObjectId(_id) }, { $set: updateData });
     
-          // Emit updated tasks list after update
-          sendTasks();
-    
+          await sendTasks();  // Emit updated tasks list
           callback && callback({ success: true });
         } catch (error) {
-          console.error('Error updating task:', error);
+          console.error('❌ Error updating task:', error);
           callback && callback({ success: false, error: 'Failed to update task' });
         }
       });
     
-      // Handle task delete
+      // Handle Task Deletion
       socket.on('task:delete', async (taskId, callback) => {
         try {
           await tasksCollection.deleteOne({ _id: new ObjectId(taskId) });
-          sendTasks();  // Emit updated task list after deletion
+    
+          await sendTasks();  // Emit updated tasks list
           callback && callback({ success: true });
         } catch (error) {
+          console.error('❌ Error deleting task:', error);
           callback && callback({ success: false, error: 'Failed to delete task' });
         }
       });
     
+      // Handle User Disconnection
       socket.on('disconnect', () => {
-        console.log('🔗 User disconnected:', socket.id);
+        console.log('🔴 User disconnected:', socket.id);
       });
     });
     
 
     // Start the Server with WebSockets
-    server.listen(port, () => {
-      console.log(` Server running on port ${port}`);
+    server.listen(port, '0.0.0.0', () => {
+      console.log(`🚀 Server running on port ${port}`);
     });
 
   } catch (error) {
