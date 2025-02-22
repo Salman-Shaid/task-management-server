@@ -158,7 +158,7 @@ async function connectDB() {
           const { _id, ...updateData } = updatedTask;
           await tasksCollection.updateOne({ _id: new ObjectId(_id) }, { $set: updateData });
 
-          await sendTasks(); // ✅ Ensure task updates are emitted properly
+          await sendTasks(); // 
           callback && callback({ success: true });
         } catch (error) {
           console.error('Error updating task:', error);
@@ -171,7 +171,7 @@ async function connectDB() {
         try {
           await tasksCollection.deleteOne({ _id: new ObjectId(taskId) });
 
-          await sendTasks(); // ✅ Ensure tasks are updated properly
+          await sendTasks(); 
           callback && callback({ success: true });
         } catch (error) {
           console.error('Error deleting task:', error);
@@ -192,7 +192,7 @@ async function connectDB() {
 
   } catch (error) {
     console.error('Error:', error);
-    process.exit(1); // Exit process if DB connection fails
+    process.exit(1);
   }
 }
 
