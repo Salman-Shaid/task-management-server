@@ -113,8 +113,6 @@ async function connectDB() {
 
       
           const updatedTasks = await tasksCollection.find().toArray();
-
-          // Emit real-time update with new tasks
           io.emit('tasks:update', updatedTasks);
 
           res.status(201).json(newTask);
