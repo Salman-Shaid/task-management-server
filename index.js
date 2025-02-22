@@ -5,7 +5,6 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const morgan = require('morgan');
 const http = require('http');
 const { Server } = require('socket.io');
-const { ObjectId } = require('mongodb');
 const port = process.env.PORT || 5000;
 const app = express();
 const server = http.createServer(app); // HTTP server for WebSockets
@@ -19,7 +18,7 @@ const io = new Server(server, {
 });
 
 // Middleware
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174','https://task-management-234b9.web.app', 'https://task-management-234b9.firebaseapp.com'], credentials: true }));
+app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174', 'https://task-management-234b9.web.app', 'https://task-management-234b9.firebaseapp.com'], credentials: true }));
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -36,7 +35,7 @@ const client = new MongoClient(uri, {
 
 async function connectDB() {
   try {
-    // await client.connect();
+    await client.connect();
     console.log('✅ Connected to MongoDB');
 
     const db = client.db('TaskManDB');
@@ -58,10 +57,10 @@ async function connectDB() {
         let existingUser = await usersCollection.findOne({ email });
 
         if (!existingUser) {
-          const newUser = { 
-            ...user, 
-            role: 'customer', 
-            timestamp: new Date().toISOString() 
+          const newUser = {
+            ...user,
+            role: 'customer',
+            timestamp: new Date().toISOString()
           };
           await usersCollection.insertOne(newUser);
           existingUser = newUser; // Assign the newly created user
@@ -134,55 +133,57 @@ async function connectDB() {
     // **WebSocket Connection**
     io.on('connection', (socket) => {
       console.log('🔗 User connected:', socket.id);
-    
-      // Fetch & Send Updated Tasks List
+
       const sendTasks = async () => {
         try {
           const tasks = await tasksCollection.find().toArray();
-          io.emit('tasks:update', tasks);  // Emit updated tasks list
+          io.emit('tasks:update', tasks);
         } catch (error) {
           console.error("❌ Error fetching tasks:", error);
         }
       };
-    
-      // Client Requests Initial Tasks
+
+      // Send Initial Tasks when a user connects
+      sendTasks();
+
+      // Handle fetching tasks when requested by client
       socket.on("getTasks", async () => {
-        await sendTasks();  // Fetch and send tasks when requested
+        const tasks = await tasksCollection.find().toArray();
+        socket.emit("tasks:update", tasks);  // Send the tasks back to the client
       });
-    
-      // Handle Task Update
+
+      // Handle task update
       socket.on('task:update', async (updatedTask, callback) => {
         try {
           const { _id, ...updateData } = updatedTask;
           await tasksCollection.updateOne({ _id: new ObjectId(_id) }, { $set: updateData });
-    
-          await sendTasks();  // Emit updated tasks list
+
+          await sendTasks(); // ✅ Ensure task updates are emitted properly
           callback && callback({ success: true });
         } catch (error) {
-          console.error('❌ Error updating task:', error);
+          console.error('Error updating task:', error);
           callback && callback({ success: false, error: 'Failed to update task' });
         }
       });
-    
-      // Handle Task Deletion
+
+      // Handle task delete
       socket.on('task:delete', async (taskId, callback) => {
         try {
           await tasksCollection.deleteOne({ _id: new ObjectId(taskId) });
-    
-          await sendTasks();  // Emit updated tasks list
+
+          await sendTasks(); // ✅ Ensure tasks are updated properly
           callback && callback({ success: true });
         } catch (error) {
-          console.error('❌ Error deleting task:', error);
+          console.error('Error deleting task:', error);
           callback && callback({ success: false, error: 'Failed to delete task' });
         }
       });
-    
-      // Handle User Disconnection
+
       socket.on('disconnect', () => {
-        console.log('🔴 User disconnected:', socket.id);
+        console.log('🔗 User disconnected:', socket.id);
       });
     });
-    
+
 
     // Start the Server with WebSockets
     server.listen(port, '0.0.0.0', () => {
