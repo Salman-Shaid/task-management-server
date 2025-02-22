@@ -12,7 +12,7 @@ const server = http.createServer(app); // HTTP server for WebSockets
 // WebSocket Server Configuration
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:5174', 'https://task-management-234b9.web.app', 'https://task-management-234b9.firebaseapp.com'],
+    origin: ['http://localhost:5173', 'http://localhost:5174', 'https://task-management-234b9.web.app', 'https://task-management-234b9.firebaseapp.com', 'https://task-management-server-j8t7.onrender.com'],
     credentials: true,
   },
 });
