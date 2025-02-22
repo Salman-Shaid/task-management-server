@@ -149,7 +149,7 @@ async function connectDB() {
       // Handle fetching tasks when requested by client
       socket.on("getTasks", async () => {
         const tasks = await tasksCollection.find().toArray();
-        socket.emit("tasks:update", tasks);  // Send the tasks back to the client
+        socket.emit("tasks:update", tasks);  
       });
 
       // Handle task update
